@@ -1,0 +1,399 @@
+---
+title: "Untitled"
+author: "Pau Blanco"
+date: "12/10/2021"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+library(ggplot2)
+#library(patchwork)
+library(lmerTest)
+library(diagram)
+library(multcomp)
+library(xtable)
+library(lsmeans)
+library(dplyr)
+#brary(gridarrange)
+require(gridExtra)
+library(car)
+library(nlme)
+```
+
+```{r cars}
+df <- read.delim("~/Pau DTU/Mixed_models/assignment5.txt", header = TRUE)
+df$Cow<-as.factor(df$Cow)
+df$protein<-as.numeric(df$protein)
+df$Diet<-as.factor(df$Diet)
+df$Timef<-as.factor(df$Timef)#factor
+df$Time<-as.numeric(df$Time)#factor
+#do it with numeric
+```
+
+```{r}
+summary(df)
+```
+
+
+```{r}
+
+
+names <- c(expression("[I]" [44]^{46}),#1 node
+            expression("Week:Diet" [2]^{3}),
+           expression("Week2:Diet" [2]^{3}),#2
+          expression("Week" [1]^{1}),
+           expression("Week2" [1]^{1}),
+           expression("Week3" [1]^{1}),
+          expression("[Cows]"[36]^{37}),
+           expression("0" [1]^{1}))#4
+## As there are 5 factors, create the 5x5 matrix of zeros
+M <- matrix(nrow = 8, ncol = 8, byrow = TRUE, data = 0)
+## Envision the structure: e.g., I need an arrow from the first
+## factor in my list to the second, so assign something to M[2,1]
+M[2, 1] <- M[3,1] <- M[4,1] <- M[7,1] <- M[5,3]<-  M[6,1]<- M[4,2] <- M[8,2]<- M[8,3] <-M[8,6] <- M[8,5] <- ""
+M[8,4] <- M[8,7] <- ""
+# Function for rotation of factor structure diagram
+# (from eNote2)
+matrix_position <- function(pos_vec) {
+n <- sum(pos_vec) # rows
+m <- length(pos_vec)-2 # inner layers
+d_hori <- 0.8/(m+1)
+bot <- 0.1; mid <- 0.5; top <- 0.9
+pos_mat <- matrix(nrow=n, ncol=2)
+pos_mat[1,1] <- bot; pos_mat[n,1] <- top
+pos_mat[1,2] <- pos_mat[n,2] <- mid
+cum_pos <- cumsum(pos_vec)
+for (i in 1:m) {
+n_vert <- pos_vec[i+1]
+d_vert <- 0.8 / (n_vert + 1)
+for (j in 1:n_vert){
+pos_mat[cum_pos[i] + j, 2] <- 0.1 + j*d_vert
+pos_mat[cum_pos[i] + j, 1] <- 0.1 + i*d_hori
+}
+}
+return(pos_mat)
+}
+# plotting the rotated factor structure diagram
+plotmat(M, pos = matrix_position(c(1, 2,4, 1)), name = names, lwd = 2,
+box.lwd = 0.5, cex.txt = 1, box.size = 0.1, shadow.size = 0,
+box.type = "square", box.prop = 0.3, arr.type = "triangle",
+curve = 0)
+```
+
+
+## Including Plots
+
+You can also embed plots, for example:
+
+```{r pressure, echo=FALSE}
+p1<-ggplot(df, aes(x=Time, y=protein, color=Cow)) + 
+    geom_line()+labs(x = "Time", y="Protein",title="Protein for each cow across time")
+p2<-ggplot(df, aes(x=Cow, y=protein, fill=Diet)) + 
+    geom_boxplot()+labs(x = "Cow")+
+   theme(axis.text.x = element_text(angle = 45,hjust=1))
+
+df %>% 
+  group_by(Cow, Diet) %>% 
+  summarise(protein = mean(protein)) -> df2
+p3<-df2 %>% 
+  ggplot() +
+  aes(x = Cow, y = protein, color = Diet) +
+  geom_line(aes(group = Diet)) +
+  geom_point()+labs(y="")
+df %>% 
+  group_by(Time, Diet) %>% 
+  summarise(protein = mean(protein)) -> df3
+p4<-ggplot(df3, aes(x=Time, y=protein, color=Diet)) + 
+    geom_line()+labs(x = "Week", y="Protein",title="Mean protein percentage for each diet across time")
+p5<-ggplot(df, aes(x=Timef, y=protein,color=Diet)) + 
+    geom_boxplot()+labs(x = "Time", y="Protein",title="Proteinn percentage for each diet across time as a factor")
+
+
+p6<-df %>%
+  ggplot(aes(x = Time, y = protein, group = Cow,color=Cow)) +
+  geom_point() +
+  geom_line() +
+  facet_wrap(~Diet,ncol=3) +
+  theme_minimal()
+
+p1
+p2
+#p3
+#p4
+p5
+p6
+#grid.arrange(p2, p4, nrow=2)
+p6
+
+hist(df$protein)
+```
+
+
+```{r}
+#separate analysis of cows data
+byTime <- by(df, df$Timef,
+function(x) anova(lm(protein ~ Diet, data = x)))
+
+model_byTime <- by(df, df$Timef,
+function(x) lm(protein ~ Diet, data = x))
+
+# extract p-values:
+my.p<-numeric(16)
+for(i in 1:16){
+  my.p[i]<-byTime[[i]]$"Pr(>F)"[1]
+  }
+plot(4:19,-log(my.p),type="b",pch=16,ylab="-log(p-value)",xlab="week")
+#month 7, 14 AND 17 IS WHERE THERE ARE THE MOST SIGNIFICANT DIFERENCES
+#correspond to time 4 ,11 and 14
+
+week_of_interest<-4
+byTime[[week_of_interest]]
+(emmeans(model_byTime[[week_of_interest]],pairwise ~ Diet)$emmeans)
+(emmeans(model_byTime[[week_of_interest]],pairwise ~ Diet)$contrasts)
+```
+
+# In the cell below we see that Diet is a significant effect
+```{r}
+#time_subDfs <- split(df, f = df$Time)
+#m0 <- lmer(protein~Diet + (1|Cow), data = time_subDfs$'4')
+#anova(m0)
+
+# Analyse using summary measures
+DataTot <- aggregate(df$protein,
+                     by=list(df$Cow, df$Diet),
+                     mean)
+#have a look
+head(DataTot)
+
+names(DataTot) <- c("Cow","Diet", "Tot")
+
+analysis_fixed<-lm(Tot ~ Diet, data = DataTot)
+(anova(analysis_fixed))
+(emmeans(analysis_fixed,pairwise ~ Diet)$emmeans)
+(emmeans(analysis_fixed,pairwise ~ Diet)$contrasts)
+
+#check model assumptions
+par(mfrow=c(2,2))
+plot(analysis_fixed, which=1:4)
+
+summary(analysis_fixed)
+#drop1(analysis,test="F")
+```
+
+
+
+```{r}
+#########################
+# Random effects approach with time as FACTOR
+#########################
+#random eff model reduction
+analysis1_re_f <- lmer(protein ~ Timef + Diet + Timef:Diet + (1 | Cow) + (1| Cow:Diet), data = df)
+ranova(analysis1_re_f)
+analysis2_re_f <- lmer(protein ~ Timef + Diet + Timef:Diet + (1| Cow), data = df)
+ranova(analysis2_re_f)
+VarCorr(analysis2_re_f)
+confint(analysis2_re_f, parm=1:2)
+
+#fixed effect model reduction
+anova(analysis2_re_f)
+analysis3_re_f <- lmer(protein ~ Timef + Diet + (1| Cow), data = df)
+(anova(analysis3_re_f))
+summary(analysis3_re_f)
+
+#we comopare the final model wit and without random structure
+analysis3_wo_re_f <- lm(protein ~ Timef + Diet + Cow, data = df)
+
+par(mfrow=c(2,2))
+plot(analysis3_wo_re_f, which=1:4)
+par(mfrow=c(1,1))
+
+1-pchisq(2*(logLik(analysis3_wo_re_f)-logLik(analysis3_re_f)),df=36)
+
+# can't reduce random structure of Cow
+ranova(analysis3_re_f)
+```
+
+We identified the random and fixed effects. Let´s see if using Time as numeric helps. But ttime can be in higher order... as a simple fixed effeect with linear time is not good enough.
+```{r}
+lm_order1 <- lm(protein ~ Time*Diet, data=df)
+ggplot(df, aes(x=Time, y=protein, group=Diet, color=Diet)) +
+geom_point()+ggtitle("1st order fit") +
+geom_line(aes(y=fitted(lm_order1)))
+```
+
+```{r}
+df$Time2 <- scale(df$Time^2)
+df$Time3 <- scale(df$Time^3)
+df$Time4 <- scale(df$Time^4)
+#df$Time <- scale(df$Time)
+
+lmQ_order4_re <- lmer(protein ~ Time*Diet +Time2*Diet+Time3*Diet+Time4*Diet+ (1|Cow), data=df)
+ranova(lmQ_order4_re)
+anova(lmQ_order4_re)
+lmQ_order4_re = update(lmQ_order4_re, ~.-Time4)
+anova(lmQ_order4_re)
+lmQ_order4_re = update(lmQ_order4_re, ~.-Diet:Time4)
+anova(lmQ_order4_re)
+lmQ_order4_re = update(lmQ_order4_re, ~.-Diet)
+anova(lmQ_order4_re)
+## A p signal of "." appears in Time3:Diet interaction term, which means that for the given data
+## it is not significant, but it might turn significant if we added more data into the analysis
+lmFinal = update(lmQ_order4_re, ~.-Time3:Diet)
+ranova(lmFinal)
+(anova(lmFinal))
+summary(lmFinal)
+
+#variance values
+VarCorr(lmFinal)
+confint(lmFinal, parm=1:2)
+```
+
+
+```{r}
+#we compare the final random effects model with and without random structure
+lmFinal_wo_re <- lm(protein ~ Time + Time2 + Time3+ Time:Diet + Time2:Diet + Cow, data = df)
+1-pchisq(2*(logLik(lmFinal_wo_re)-logLik(lmFinal)),df=36)#change df    9+37 vs 
+#we cannot remove random effects
+
+#compare factor with numeric
+1-pchisq(2*(logLik(analysis3_re_f)-logLik(lmFinal)),df=17)#change df    9+37 vs 
+
+analysis3_re_f
+
+```
+
+#model assumptions
+
+
+
+```{r}
+# Gaussian correlation structure:
+lm.gauss<-lme(protein~Time+Time2+Time3+Time:Diet+Time2:Diet,random=~1|Cow,
+              correlation=corGaus(form=~Time|Cow),
+              data=df)
+
+lm.gaussnugget<-lme(protein~ Time+Time2+Time3+Time:Diet+Time2:Diet,random=~1|Cow,
+              correlation=corGaus(form=~Time|Cow, nugget=TRUE),
+              data=df)
+
+# Exponential correlation structure:
+lm.exp<-lme(protein~Time+Time2+Time3+Time:Diet+Time2:Diet,random=~1|Cow,
+              correlation=corExp(form=~Time|Cow),
+              data=df)
+
+
+# First order autorregressive (AR1) correlation structure:
+lm.AR1<-lme(protein~Time+Time2+Time3+Time:Diet+Time2:Diet,random=~1|Cow,
+              correlation=corAR1(form=~Time|Cow),
+              data=df)
+
+plot(Variogram(lm.gauss, form= ~ Time | Cow , data=df))
+plot(Variogram(lm.gaussnugget, form= ~ Time | Cow , data=df),xlab="Weeks distance",ylim=c(0,1.3))
+plot(Variogram(lm.exp, form= ~ Time | Cow , data=df))
+plot(Variogram(lm.AR1, form= ~ Time | Cow , data=df))
+
+(anova(lm.gauss,lm.gaussnugget,lm.exp,lm.AR1))
+(anova(lm.gaussnugget,lm.exp))
+(anova(lm.gaussnugget,lm.AR1))
+
+(anova(lm.gauss))
+sum_df<-summary(lm.gaussnugget)
+
+```
+
+```{r}
+#we compare the final random effects model with spatial correlation effects
+1-pchisq(2*(logLik(lm.gaussnugget)-logLik(lmFinal)),2)#df arima=15+2, and random effects =1+2
+```
+
+
+
+
+
+Check model assumptions
+```{r}
+#model control random effects model
+lmer_res = resid(lm.gaussnugget)
+#analysis3_re_f_inf<- influence(lmFinal, obs = TRUE)
+par(mfrow = c(1,3))
+plot(((lmer_res)) ~ predict(lm.gaussnugget),ylab="Residuals",xlab="Fitted")
+abline(h=0)
+qqPlot(lmer_res, main = "Normal Q-Q plot",xlab="Theoretical Quantiles",ylab="Sample Quantiles")
+hist(lmer_res, main = "", xlab = "Residuals",breaks=20)
+
+
+
+df_w_res = df %>%bind_cols(data.frame(Residual = lmer_res))
+# Residuals vs. treatment
+plot_loc = df_w_res %>%ggplot(aes(x = Diet, y = Residual)) +geom_point() +geom_hline(yintercept=0, linetype="dashed") +theme_classic()
+# Residuals vs. covariate "x"
+plot_x = df_w_res  %>%ggplot(aes(x = TIme, y = Residual)) +geom_point() +geom_hline(yintercept=0, linetype="dashed") +theme_classic()
+# Residuals vs. interaction trt:x
+plot_loc2x = df_w_res  %>%
+  ggplot(aes(x = Diet:factor(Time), y = Residual, col = Diet)) +
+  geom_point() +geom_hline(yintercept=0, linetype="dashed") +
+  theme_classic() +labs(x = "(Each) Week:Diet") + theme(axis.text.x = element_text(angle=45, hjust=1))+
+  theme(legend.position = "none") +
+  scale_x_discrete(breaks = df$Time[seq(4, length(df$Time)+4, by = 2)])
+
+num_influence = influence(analysis3_re_f, obs = TRUE)
+cd_num = data.frame(cook_distance = cooks.distance(num_influence)) %>%bind_cols(df)
+num_cook = cd_num %>%
+  add_rownames(var = "Index") %>%
+  mutate(Index = as.numeric(Index)) %>%
+  ggplot(aes(x = Index, y = cook_distance, color = Diet)) +
+  ggtitle("Cook's distance ") +geom_point() +theme_classic()+ 
+  scale_colour_discrete(name="Diet")
+
+# combine plots
+grid.arrange(plot_loc2x, num_cook, nrow=1)
+```
+
+Create comparison plots
+```{r}
+library(plyr)
+df      <- df %>% 
+  plyr::rename(c("Time" = "W","Time2" = "W2","Time3" = "W3"))
+
+lm.gaussnugget_bis<-lme(protein~W+W2+W3+W:Diet+W2:Diet,random=~1|Cow,
+              correlation=corGaus(form=~W|Cow, nugget=TRUE),
+              data=df)
+
+#1st order interaction
+quantile(df$W, probs = c(.25,.5,.75) )
+mean(df$W)
+diet_lsmns_x<-lsmeans(lm.gaussnugget_bis,"Diet",by="W",data=df, at=list(W=c(7.75, 11.5, 15.25)))
+(diet_lsmns_x)
+plot(diet_lsmns_x,comparison=TRUE)
+
+#contrasts
+diet_lsmns_x_comp<-lsmeans(lm.gaussnugget_bis,pairwise~W:Diet,data=df, at=list(W=c(7.75, 11.5, 15.25)))
+(diet_lsmns_x_comp$contrasts)
+
+#2nd order interaction
+quantile(df$W2, probs = c(.25,.5,.75) )
+
+diet_lsmns_x2<-lsmeans(lm.gaussnugget_bis,"Diet",by="W2",data=df, at=list(W2=c(-0.8651382, -0.1948301,  0.7352515 )))
+(diet_lsmns_x2)
+plot(diet_lsmns_x2,comparison=TRUE)
+
+#contrasts
+diet_lsmns_x2_comp<-lsmeans(lm.gaussnugget_bis,pairwise~W:Diet,data=df, at=list(W=c(7.75, 11.5, 15.25)))
+xtable(diet_lsmns_x2_comp$contrasts)
+
+
+#dies main effect
+diet_lsmns<-lsmeans(lm.gaussnugget_bis,"Diet",data=df)
+(diet_lsmns_x)
+plot(diet_lsmns,comparison=TRUE)
+
+
+```
+
+
+
+
+
+

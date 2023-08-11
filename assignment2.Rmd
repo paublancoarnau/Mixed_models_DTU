@@ -1,0 +1,244 @@
+---
+title: "Untitled"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(ggplot2)
+library(patchwork)
+library(lmerTest)
+library(diagram)
+library(multcomp)
+library(xtable)
+library(lsmeans)
+library(dplyr)
+```
+
+## R Markdown
+
+
+```{r cars}
+knitr::opts_chunk$set(echo = TRUE)
+colour <- read.delim("~/Pau DTU/Mixed_models/assignment2.txt", header = TRUE)
+colour$Assessor=as.factor(colour$Assessor)
+colour$TVset=as.factor(colour$TVset)
+colour$Picture=as.factor(colour$Picture)
+colour$Repeat=as.factor(colour$Repeat)
+
+```
+
+```{r}
+xtable(summary(colour))
+```
+
+Factor structure diagram including number of levels and degrees of freedom:
+```{r}
+
+
+names <- c(expression("[I]" [114]^{144}),#1 node
+            expression("TVset:Picture" [4]^{9}),
+           expression("[TVset:A]" [21]^{24}),#2
+          expression("Picture" [2]^{3}),
+           expression("TVset" [2]^{3}),
+           expression("0" [1]^{1}))#4
+## As there are 5 factors, create the 5x5 matrix of zeros
+M <- matrix(nrow = 6, ncol = 6, byrow = TRUE, data = 0)
+## Envision the structure: e.g., I need an arrow from the first
+## factor in my list to the second, so assign something to M[2,1]
+M[2, 1] <- M[3,1] <- M[4,2] <- M[5,2] <- M[5,3]<- M[6,4] <- M[6,5] <- ""
+# Function for rotation of factor structure diagram
+# (from eNote2)
+matrix_position <- function(pos_vec) {
+n <- sum(pos_vec) # rows
+m <- length(pos_vec)-2 # inner layers
+d_hori <- 0.8/(m+1)
+bot <- 0.1; mid <- 0.5; top <- 0.9
+pos_mat <- matrix(nrow=n, ncol=2)
+pos_mat[1,1] <- bot; pos_mat[n,1] <- top
+pos_mat[1,2] <- pos_mat[n,2] <- mid
+cum_pos <- cumsum(pos_vec)
+for (i in 1:m) {
+n_vert <- pos_vec[i+1]
+d_vert <- 0.8 / (n_vert + 1)
+for (j in 1:n_vert){
+pos_mat[cum_pos[i] + j, 2] <- 0.1 + j*d_vert
+pos_mat[cum_pos[i] + j, 1] <- 0.1 + i*d_hori
+}
+}
+return(pos_mat)
+}
+# plotting the rotated factor structure diagram
+plotmat(M, pos = matrix_position(c(1, 2,2, 1)), name = names, lwd = 2,
+box.lwd = 0.5, cex.txt = 1, box.size = 0.1, shadow.size = 0,
+box.type = "square", box.prop = 0.3, arr.type = "triangle",
+curve = 0)
+
+```
+
+
+```{r}
+ftable(TVset ~ Picture, data=colour)
+ftable(TVset ~ Assessor, data=colour)
+ftable(Picture ~ Assessor, data=colour)
+ftable(Repeat ~ Assessor, data=colour)
+
+```
+
+
+## Including Plots
+
+You can also embed plots, for example:
+
+```{r}
+p1<-ggplot(colour, aes(x=Picture, y=Coloursaturation, fill=Picture)) + 
+    geom_boxplot()+labs(x = "Picture", y="Colour Saturation",title="Colour saturation for each factor") +theme(legend.position = "none")
+p2<-ggplot(colour, aes(x=TVset, y=Coloursaturation, fill=TVset)) + 
+    geom_boxplot()+labs(x = "TVset")
+p3<-ggplot(colour, aes(x=Assessor, y=Coloursaturation)) + 
+    geom_boxplot()+labs(x = "Assessor", y="Colour Saturation")
+p4<-ggplot(colour, aes(x=Repeat, y=Coloursaturation)) + 
+    geom_boxplot()+labs(x = "Repetition",y="")
+
+colour %>% 
+  group_by(TVset, Picture) %>% 
+  summarise(ColorSaturation = mean(Coloursaturation)) -> colour2
+p9<-colour2 %>% 
+  ggplot() +
+  aes(x = TVset, y = ColorSaturation, color = Picture) +
+  geom_line(aes(group = Picture)) +
+  geom_point()+labs(y="")+ylim(4.3,12.8)
+
+
+#p5<-ggplot(colour, aes(x=Picture, y=Coloursaturation, fill=TVset)) + 
+ #   geom_boxplot()+labs(x = "Picture", y="Colour Saturation ",title="Colour saturation",subtitle="dsa") 
+#p6<-ggplot(colour, aes(x=TVset, y=Coloursaturation, fill=Picture)) + 
+ #   geom_boxplot()+labs(x = "TVset")
+p7<-ggplot(colour, aes(x=TVset, y=Coloursaturation, fill=Assessor)) + 
+    geom_boxplot()+labs(x = "TVset",y="Color Saturation")+theme(legend.position = "none")
+p8<-ggplot(colour, aes(x=Picture, y=Coloursaturation, fill=Assessor)) + 
+    geom_boxplot()+labs(x = "Picture",y="")+theme(legend.position = "bottom")
+
+p1+p9+p3+p4
+#ggsave("~/DTU/Fall2021/Mixed models/assignment 2/Samples_exploratory1.pdf")
+
+
+combined <- p7 + p8 & theme(legend.position = "bottom") 
+combined + plot_layout(guides = "collect")+ plot_annotation(title = "Colour saturation variability in terms of TVset and Picture by each Assessor") & 
+  theme(plot.title = element_text(hjust = 0.5))
+
+#ggsave("~/DTU/Fall2021/Mixed models/assignment 2/Samples_exploratory2.pdf")
+
+
+```
+
+```{r}
+modelI<-lmer(Coloursaturation ~ (TVset + Picture)^2 + (1|(Assessor:Picture:TVset))+(1|Assessor:TVset)+(1|Assessor:Picture)+(1|Assessor), data = colour) #repeat not significant 3 enote
+ranova(modelI)
+
+#report el pvalue i LRT que tenennos que quitar en el siguiente paso
+model4<-lmer(Coloursaturation ~ (TVset + Picture)^2 + (1|Assessor:TVset)+(1|Assessor:Picture)+(1|(Assessor:Picture:TVset)), data = colour) #repeat not significant 3 enote
+ranova(model4)
+
+model4c<-lmer(Coloursaturation ~ (TVset + Picture)^2 + (1|Assessor:TVset)++(1|(Assessor:Picture:TVset)), data = colour) #repeat not significant 3 enote
+ranova(model4c)
+
+model4a<-lmer(Coloursaturation ~ (TVset + Picture)^2 + (1|Assessor:TVset), data = colour) #repeat not significant 3 enote
+ranova(model4a)
+anova(model4a)
+sum_model<-summary(model4a)
+xtable(sum_model$coefficients)
+
+#we dont include Tvset and picture main effects as random effects as we are investigating these settings, 
+
+
+
+xtable(summary(anova(model4a)))
+
+
+
+```
+```{r}
+VarCorr(model4a)
+picture_coeff<-lsmeans::lsmeans(model4a, pairwise ~ Picture)
+tv_coeff<-lsmeans::lsmeans(model4a, pairwise ~ TVset)
+xtable(tv_coeff$lsmeans)
+xtable(picture_coeff$contrasts)
+
+interact_coeff<-lsmeans::lsmeans(model4a, pairwise ~ TVset:Picture)
+xtable(interact_coeff$contrasts)
+
+#lsmeans::lsmeans(model2, pairwise ~ Picture)$contrasts
+confint(model4a,oldNames=FALSE)#profile likelihood-based dCI for the variance parameters
+```
+```{r}
+tuk2 <- glht(model4a, linfct = mcp(TVset = "Tukey"))
+tuk.cld2 <- cld(tuk2)
+tuk.cld2 # Display the CLD
+# Plot the compact-letter-display:
+old.par <- par(no.readonly=TRUE) # Save current graphics parameters
+par(mai=c(1,1,1.25,1)) # Use sufficiently large upper margin
+plot(tuk.cld2, col=2:6)
+par(old.par) # reset graphics parameters
+
+
+tuk2 <- glht(model4a, linfct = mcp(Picture = "Tukey"),ylab="DDSA")
+tuk.cld2 <- cld(tuk2)
+tuk.cld2 # Display the CLD
+# Plot the compact-letter-display:
+old.par <- par(no.readonly=TRUE) # Save current graphics parameters
+par(mai=c(1,1,1.25,1)) # Use sufficiently large upper margin
+plot(tuk.cld2, col=2:6)
+par(old.par) # reset graphics parameters
+```
+
+
+```{r}
+#model1<-lmer(Coloursaturation ~ (TVset + Picture)^2 + (1|Assessor), data = colour) #repeat not significant
+#ranova(model1)
+#VarCorr(model1)
+#anova(model1)
+```
+
+```{r}
+drop1(model1,test="F")
+```
+
+```{r}
+model2=update(model1,~.-TVset:Picture)
+ranova(model2)#less significance del anova wrt the intercept
+VarCorr(model2)
+anova(model2)
+summary(model2)
+```
+
+
+
+```{r}
+#coefficient estimates
+lsmeans::lsmeans(model2, pairwise ~ TVset)
+#lsmeans::lsmeans(model2, pairwise ~ TVset)$contrasts
+lsmeans::lsmeans(model2, pairwise ~ Picture)
+#lsmeans::lsmeans(model2, pairwise ~ Picture)$contrasts
+confint(model2,oldNames=FALSE)#profile likelihood-based dCI for the variance parameters
+
+```
+
+```{r}
+G = 2*(logLik(model2,REML=T)-logLik(model1,REML=T))#not correct as we need same main effects
+logLik(model2,REML=T)#lower loglilkeihood, better fitting.
+logLik(model1,REML=T)
+G
+1-pchisq(G,df=0.5)
+```
+
+```{r}
+tuk2 <- glht(model2, linfct = mcp(GEN = "Tukey"))
+tuk.cld2 <- cld(tuk2)
+tuk.cld2 # Display the CLD
+# Plot the compact-letter-display:
+old.par <- par(no.readonly=TRUE) # Save current graphics parameters
+par(mai=c(1,1,1.25,1)) # Use sufficiently large upper margin
+plot(tuk.cld2, col=2:6)
+par(old.par) # reset graphics parameters
+```
+
